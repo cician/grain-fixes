@@ -520,12 +520,6 @@ let numberEqualFloat64Help = (x, y) => {
   }
 }
 
-/*
-let numberEqualFloat32Help = (x, y) => {
-  numberEqualFloat64Help(WasmF64.promoteF32(x), y)
-}
-*/
-
 let numberEqualFloat32Help = (x, y) => {
   let xIsInteger = isIntegerF32(x)
   // Basic number:

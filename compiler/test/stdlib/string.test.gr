@@ -157,3 +157,5 @@ assert String.endsWith(emojis, emojis)
 assert !String.endsWith("bluefox", short)
 assert !String.endsWith("q", emoji)
 assert !String.endsWith("LAZY DOG.", fox)
+
+assert String.join(", ", ["a", "b", "c"]) == "a, b, c"

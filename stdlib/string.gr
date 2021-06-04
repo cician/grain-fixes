@@ -1,7 +1,6 @@
 import WasmI32 from "runtime/unsafe/wasmi32"
 import Memory from "runtime/unsafe/memory"
 import Exception from "runtime/exception"
-import List from "list"
 import { tagSimpleNumber, allocateArray, allocateChar, allocateString } from "runtime/dataStructures"
 
 // Concatenate two strings.
@@ -566,19 +565,35 @@ export let endsWith = (p: String, s: String) => {
   }
 }
 
+// reimplemented here to avoid dependency on list.gr
+let rec listReverse = (lst, acc) => {
+  match(lst) {
+    [] => acc,
+    [hd, ...tl] => listReverse(tl, [hd, ...acc])
+  }
+}
+
+let rec joinHelp = (sep, acc, rem) => {
+  match(rem) {
+    [] => acc,
+    [hd, ...tl] => {
+      let newAcc = match(acc) {
+        None => Some(hd),
+        Some(s) => Some(hd ++ sep ++ s)
+      }
+      joinHelp(sep, newAcc, tl)
+    }
+  }
+}
+
 // Join the given list of strings with the given separator
 // @param separator: String - The separator to insert between items in the string
 // @param items: List<String> - The input strings
 // @returns String
 export let join = (separator: String, items: List<String>) => {
   // Reverse and reduce to take advantage of TCE
-  match(List.reduce((acc, elt) => {
-      match(acc) {
-        None => Some(elt),
-        Some(s) => Some(elt ++ separator ++ s)
-      }
-    }, None, List.reverse(items))) {
+  match(joinHelp(separator, None, listReverse(items, []))) {
     None => "",
-    Some(s) => s
+    Some(s) => s,
   }
 }

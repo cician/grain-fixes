@@ -57,7 +57,7 @@ export let set = (index, value, array) => {
   array[index] = value
 }
 
-export let subArray = (startIndex, endIndex, array) => {
+export let slice = (startIndex, endIndex, array) => {
   init(endIndex - startIndex, n => array[startIndex + n])
 }
 
