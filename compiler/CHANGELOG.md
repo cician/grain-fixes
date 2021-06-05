@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://www.github.com/grain-lang/grain/compare/@grain/compiler-v0.3.2...@grain/compiler-v0.4.0) (2021-06-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** Split -g into --debug and --wat (#620)
+
+### Features
+
+* **cli:** Split -g into --debug and --wat ([#620](https://www.github.com/grain-lang/grain/issues/620)) ([79809bb](https://www.github.com/grain-lang/grain/commit/79809bb12592bdcb52fcb8301e7d4b64f35276e8))
+
+
+### Bug Fixes
+
+* else clause on new line ([#678](https://www.github.com/grain-lang/grain/issues/678)) ([13b01c9](https://www.github.com/grain-lang/grain/commit/13b01c9df77d261e55639ae10ded50a922485894))
+* Properly initialize malloc free list ([#700](https://www.github.com/grain-lang/grain/issues/700)) ([0576fd9](https://www.github.com/grain-lang/grain/commit/0576fd9be8dbfecc5d7081731a1c5bedee32f9f1))
+
 ### [0.3.2](https://www.github.com/grain-lang/grain/compare/@grain/compiler-v0.3.1...@grain/compiler-v0.3.2) (2021-05-29)
 
 

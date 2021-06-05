@@ -1,5 +1,12 @@
 # Changelog
 
+### [0.3.3](https://www.github.com/grain-lang/grain/compare/stdlib-v0.3.2...stdlib-v0.3.3) (2021-06-05)
+
+
+### Bug Fixes
+
+* Properly initialize malloc free list ([#700](https://www.github.com/grain-lang/grain/issues/700)) ([0576fd9](https://www.github.com/grain-lang/grain/commit/0576fd9be8dbfecc5d7081731a1c5bedee32f9f1))
+
 ### [0.3.2](https://www.github.com/grain-lang/grain/compare/stdlib-v0.3.1...stdlib-v0.3.2) (2021-05-29)
 
 
