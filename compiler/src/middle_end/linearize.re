@@ -436,6 +436,11 @@ let rec transl_imm =
       [arg1, arg2],
     ) =>
     transl_imm({...e, exp_desc: TExpPrim2(Or, arg1, arg2)})
+  | TExpApp(
+      {exp_desc: TExpIdent(_, _, {val_kind: TValPrim("@not")})},
+      [arg],
+    ) =>
+    transl_imm({...e, exp_desc: TExpPrim1(Not, arg)})
   | TExpApp(func, args) =>
     let tmp = gensym("app");
     let (new_func, func_setup) = transl_imm(func);
@@ -475,7 +480,7 @@ let rec transl_imm =
     if (mut_flag == Mutable) {
       failwith("mutable let rec");
     };
-    let tmp = gensym("lam");
+    let tmp = gensym("lam_letrec");
     let (binds, new_binds_setup) =
       List.split(
         List.map(
@@ -488,7 +493,9 @@ let rec transl_imm =
     let names =
       List.map(
         fun
-        | {pat_desc: TPatVar(id, _)} => id
+        | {
+            pat_desc: TPatVar(id, _) | TPatAlias({pat_desc: TPatAny}, id, _),
+          } => id
         | _ => failwith("Non-name not allowed on LHS of let rec."),
         binds,
       );
@@ -501,7 +508,7 @@ let rec transl_imm =
       ],
     );
   | TExpLambda([{mb_pat, mb_body: body}], _) =>
-    let tmp = gensym("lam");
+    let tmp = gensym("lam_lambda");
     let (lam, _) = transl_comp_expression(e);
     (Imm.id(~loc, ~env, tmp), [BLet(tmp, lam)]);
   | TExpLambda([], _) => failwith("Impossible: transl_imm: Empty lambda")
@@ -959,7 +966,9 @@ and transl_comp_expression =
     let names =
       List.map(
         fun
-        | {pat_desc: TPatVar(id, _)} => id
+        | {
+            pat_desc: TPatVar(id, _) | TPatAlias({pat_desc: TPatAny}, id, _),
+          } => id
         | _ => failwith("Non-name not allowed on LHS of let rec."),
         binds,
       );
@@ -1064,6 +1073,11 @@ and transl_comp_expression =
       ans_setup @ [BSeq(ans)],
     );
   | TExpApp(
+      {exp_desc: TExpIdent(_, _, {val_kind: TValPrim("@assert")})},
+      [arg],
+    ) =>
+    transl_comp_expression({...e, exp_desc: TExpPrim1(Assert, arg)})
+  | TExpApp(
       {exp_desc: TExpIdent(_, _, {val_kind: TValPrim("@and")})},
       [arg1, arg2],
     ) =>
@@ -1073,6 +1087,11 @@ and transl_comp_expression =
       [arg1, arg2],
     ) =>
     transl_comp_expression({...e, exp_desc: TExpPrim2(Or, arg1, arg2)})
+  | TExpApp(
+      {exp_desc: TExpIdent(_, _, {val_kind: TValPrim("@not")})},
+      [arg],
+    ) =>
+    transl_comp_expression({...e, exp_desc: TExpPrim1(Not, arg)})
   | TExpApp(func, args) =>
     let (new_func, func_setup) = transl_imm(func);
     let (new_args, new_setup) = List.split(List.map(transl_imm, args));
@@ -1235,7 +1254,8 @@ let rec transl_anf_statement =
     let name =
       if (exported) {
         switch (vb_pat.pat_desc) {
-        | TPatVar(bind, _) => Some(Ident.name(bind))
+        | TPatVar(bind, _)
+        | TPatAlias(_, bind, _) => Some(Ident.name(bind))
         | _ => None
         };
       } else {
@@ -1318,15 +1338,26 @@ let rec transl_anf_statement =
       };
     (Some(exp_setup @ setup @ rest_setup), rest_imp);
   | TTopLet(export_flag, Recursive, mut_flag, binds) =>
+    let exported = export_flag == Exported;
     let (binds, new_binds_setup) =
       List.split(
         List.map(
           ({vb_pat, vb_expr}) => {
+            let name =
+              if (exported) {
+                switch (vb_pat.pat_desc) {
+                | TPatVar(bind, _)
+                | TPatAlias(_, bind, _) => Some(Ident.name(bind))
+                | _ => None
+                };
+              } else {
+                None;
+              };
             let vb_expr = {
               ...vb_expr,
               exp_attributes: attributes @ vb_expr.exp_attributes,
             };
-            (vb_pat, transl_comp_expression(vb_expr));
+            (vb_pat, transl_comp_expression(~name?, vb_expr));
           },
           binds,
         ),
@@ -1336,7 +1367,9 @@ let rec transl_anf_statement =
     let names =
       List.map(
         fun
-        | {pat_desc: TPatVar(id, _)} => id
+        | {
+            pat_desc: TPatVar(id, _) | TPatAlias({pat_desc: TPatAny}, id, _),
+          } => id
         | _ => failwith("Non-name not allowed on LHS of let rec."),
         binds,
       );

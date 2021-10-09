@@ -13,6 +13,17 @@ let starts_with = (string, prefix) => {
   };
 };
 
+let trim_each_line = str => {
+  str
+  |> Str.split(Str.regexp("\\(\r\n\\|\n\\)"))
+  |> List.map(String.trim)
+  |> String.concat("\n");
+};
+
+let deasterisk_each_line = str => {
+  Str.global_replace(Str.regexp("^[ \t]*\\*"), "", str);
+};
+
 /**
 Slices a string given optional zero-based [~first] and [~last] indexes. The character
 at the [~last] index will not be included in the result.

@@ -47,6 +47,7 @@ and type_extension = {
   ptyext_path: loc(Identifier.t),
   ptyext_params: list(parsed_type),
   ptyext_constructors: list(extension_constructor),
+  [@sexp_drop_if sexp_locs_disabled]
   ptyext_loc: Location.t,
 }
 
@@ -54,12 +55,14 @@ and type_extension = {
 and extension_constructor = {
   pext_name: loc(string),
   pext_kind: extension_constructor_kind,
+  [@sexp_drop_if sexp_locs_disabled]
   pext_loc: Location.t,
 }
 
 [@deriving (sexp, yojson)]
 and type_exception = {
   ptyexn_constructor: extension_constructor,
+  [@sexp_drop_if sexp_locs_disabled]
   ptyexn_loc: Location.t,
 }
 
@@ -500,7 +503,7 @@ type toplevel_stmt_desc =
   | PTopImport(import_declaration)
   | PTopForeign(export_flag, value_description)
   | PTopPrimitive(export_flag, value_description)
-  | PTopData(export_flag, data_declaration)
+  | PTopData(list((export_flag, data_declaration)))
   | PTopLet(export_flag, rec_flag, mut_flag, list(value_binding))
   | PTopExpr(expression)
   | PTopException(export_flag, type_exception)
@@ -519,6 +522,7 @@ type toplevel_stmt = {
 type comment_desc = {
   cmt_content: string,
   cmt_source: string,
+  [@sexp_drop_if sexp_locs_disabled]
   cmt_loc: Location.t,
 };
 

@@ -188,6 +188,21 @@ assert Array.product(arrC, arrB) == [>(1,2),(1,3),(1,4)]
 assert Array.product(arrC, arrD) == [>(1,2)]
 assert Array.product([>], [>]) == [>]
 
+// Array.zip
+
+let arrA = [> 1, 2, 3, 4, 5]
+let arrB = [> 5, 4, 3, 2, 1]
+
+assert Array.zip(arrA, arrB) == [>(1,5),(2,4),(3,3),(4,2),(5,1)]
+
+// Array.unzip
+
+let arrA = [> 1, 2, 3, 4, 5]
+let arrB = [> 5, 4, 3, 2, 1]
+
+assert Array.unzip(Array.zip(arrA, arrB)) == (arrA, arrB)
+assert Array.unzip([>]) == ([>], [>])
+
 // Array.count
 
 let arr = [> 1, 2, 3]
@@ -250,3 +265,24 @@ assert Array.unique([> 1, 1, 2, 2, 3, 3]) == [> 1, 2, 3]
 assert Array.unique([> 0, 1, 2]) == [> 0, 1, 2]
 assert Array.unique([> 0, 0, 0, 0, 0, 0]) == [> 0]
 assert Array.unique([>]) == [>]
+
+// Array.join
+assert Array.join(", ", [> "a", "b", "c"]) == "a, b, c"
+assert Array.join(", ", [>]) == ""
+
+// Array.slice
+let  testChars = [> 'a', 'b', 'c']
+
+assert Array.slice(0, 1, testChars) == [> 'a']
+assert Array.slice(1, Array.length(testChars), testChars) == [> 'b', 'c']
+assert Array.slice(0, 0, testChars) == [>]
+// Purposefully huge number
+assert Array.slice(1, 10000, testChars) == [> 'b', 'c']
+// Negative indexing
+assert Array.slice(1, -1, testChars) == [> 'b']
+assert Array.slice(-2, -1, testChars) == [> 'b']
+// Bad order
+assert Array.slice(2, 1, testChars) == [>]
+assert Array.slice(-1, -2, testChars) == [>]
+// Empty
+assert Array.slice(1, 4, [>]) == [>]

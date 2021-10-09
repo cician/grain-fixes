@@ -4,6 +4,9 @@ type config_opt =
 type saved_config_opt =
   | SavedOpt((ref('a), 'a)): saved_config_opt;
 
+type digestable_opt =
+  | DigestableOpt('a): digestable_opt;
+
 type config = list(saved_config_opt);
 
 /* Here we model the API provided by cmdliner without introducing
@@ -198,6 +201,64 @@ let reset_config = () => {
   List.iter(single_reset, opts^);
 };
 
+let root_config = ref([]);
+let root_config_digest = ref(None);
+
+let set_root_config = () => {
+  root_config := save_config();
+  root_config_digest := None;
+};
+
+let get_root_config_digest = () => {
+  switch (root_config_digest^) {
+  | Some(dgst) => dgst
+  | None =>
+    let config_opts =
+      List.map((SavedOpt((_, opt))) => DigestableOpt(opt), root_config^);
+    let config = Marshal.to_bytes(config_opts, []);
+    let ret = Digest.to_hex(Digest.bytes(config));
+    root_config_digest := Some(ret);
+    ret;
+  };
+};
+
+let with_root_config = (c, thunk) => {
+  // for test suite
+  let saved = root_config^;
+  let saved_digest = root_config_digest^;
+  try(
+    {
+      root_config := c;
+      let r = thunk();
+      root_config := saved;
+      root_config_digest := saved_digest;
+      r;
+    }
+  ) {
+  | exn =>
+    root_config := saved;
+    root_config_digest := saved_digest;
+    raise(exn);
+  };
+};
+
+let preserve_root_config = thunk => {
+  // for test suite
+  let saved = root_config^;
+  let saved_digest = root_config_digest^;
+  try({
+    let r = thunk();
+    root_config := saved;
+    root_config_digest := saved_digest;
+    r;
+  }) {
+  | exn =>
+    root_config := saved;
+    root_config_digest := saved_digest;
+    raise(exn);
+  };
+};
+
 let with_config = (c, thunk) => {
   /* Possible optimization: Only save the delta */
   let saved = save_config();
@@ -227,6 +288,9 @@ let preserve_config = thunk => {
     raise(exn);
   };
 };
+
+let preserve_all_configs = thunk =>
+  preserve_root_config(() => preserve_config(thunk));
 
 let with_cli_options = (term: 'a): Cmdliner.Term.t('a) => {
   open Cmdliner;
@@ -306,8 +370,25 @@ let option_conv = ((prsr, prntr)) => (
     | Some(x) => prntr(ppf, x),
 );
 
-let optimizations_enabled =
-  toggle_flag(~doc="Disable optimizations.", ~names=["O0"], true);
+type optimization_level =
+  | Level_zero
+  | Level_one
+  | Level_two
+  | Level_three;
+
+let optimization_level =
+  opt(
+    ~doc="Set the optimization level.",
+    ~names=["O"],
+    ~conv=
+      Cmdliner.Arg.enum([
+        ("0", Level_zero),
+        ("1", Level_one),
+        ("2", Level_two),
+        ("3", Level_three),
+      ]),
+    Level_three,
+  );
 
 let include_dirs =
   opt(
@@ -434,6 +515,28 @@ let no_gc =
     false,
   );
 
+let bulk_memory =
+  toggle_flag(
+    ~names=["no-bulk-memory"],
+    ~doc="Turn off Bulk Memory operations",
+    true,
+  );
+
+let wasi_polyfill =
+  opt(
+    ~names=["wasi-polyfill"],
+    ~conv=option_conv(Cmdliner.Arg.string),
+    ~doc="Custom WASI implementation",
+    None,
+  );
+
+let use_start_section =
+  toggle_flag(
+    ~names=["use-start-section"],
+    ~doc="Replace the _start export with a start section during linking.",
+    false,
+  );
+
 let elide_type_info =
   toggle_flag(
     ~names=["elide-type-info"],
@@ -450,6 +553,8 @@ let lsp_mode =
     ~doc="Generate lsp errors and warnings only",
     false,
   );
+
+let print_warnings = internal_opt(true);
 
 /* To be filled in by grainc */
 let base_path = internal_opt("");
@@ -471,15 +576,11 @@ let with_base_path = (path, func) => {
 let stdlib_directory = (): option(string) =>
   Option.map(path => Files.derelativize(path), stdlib_dir^);
 
-let module_search_path_from_base_path = base_path => {
-  switch (stdlib_directory()) {
-  | Some(x) => [base_path, ...include_dirs^] @ [x] /* stdlib goes last */
-  | None => [base_path, ...include_dirs^]
-  };
-};
-
 let module_search_path = () => {
-  module_search_path_from_base_path(base_path^);
+  switch (stdlib_directory()) {
+  | Some(x) => include_dirs^ @ [x] /* stdlib goes last */
+  | None => include_dirs^
+  };
 };
 
 let apply_inline_flags = (~on_error, cmt_content) =>

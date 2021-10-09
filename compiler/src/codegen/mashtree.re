@@ -360,8 +360,20 @@ type instr = {
 [@deriving sexp]
 and instr_desc =
   | MImmediate(immediate)
+  | MCallRaw({
+      func: string,
+      func_type: (list(asmtype), list(asmtype)),
+      args: list(immediate),
+    })
   | MCallKnown({
       func: string,
+      closure: immediate,
+      func_type: (list(asmtype), list(asmtype)),
+      args: list(immediate),
+    })
+  | MReturnCallKnown({
+      func: string,
+      closure: immediate,
       func_type: (list(asmtype), list(asmtype)),
       args: list(immediate),
     })
@@ -395,6 +407,7 @@ and instr_desc =
   | MStore(list((binding, instr))) /* Items in the same list have their backpatching delayed until the end of that list */
   | MSet(binding, instr)
   | MDrop(instr) /* Ignore the result of an expression. Used for sequences. */
+  | MIncRef(instr) /* Apply a GC incRef to the value */
   | MTracepoint(int) /* Prints a message to the console; for compiler debugging */
 
 [@deriving sexp]
@@ -434,6 +447,7 @@ type export = {
 [@deriving sexp]
 type mash_function = {
   index: int32,
+  id: Ident.t,
   name: option(string),
   args: list(asmtype),
   return_type: list(asmtype),

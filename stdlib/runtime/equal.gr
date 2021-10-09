@@ -14,9 +14,11 @@ import WasmI32, {
 } from "runtime/unsafe/wasmi32"
 import WasmI64 from "runtime/unsafe/wasmi64"
 import Tags from "runtime/unsafe/tags"
+import Memory from "runtime/unsafe/memory"
 
 primitive (!) : Bool -> Bool = "@not"
 primitive (||) : (Bool, Bool) -> Bool = "@or"
+primitive (&&) : (Bool, Bool) -> Bool = "@and"
 
 import { isNumber, numberEqual } from "runtime/numbers"
 
@@ -186,7 +188,7 @@ let rec heapEqualHelp = (heapTag, xptr, yptr) => {
     }
   }
 }, equalHelp = (x, y) => {
-  if ((x & Tags._GRAIN_GENERIC_TAG_MASK) != 0n) {
+  if (((x & Tags._GRAIN_GENERIC_TAG_MASK) != 0n) && ((y & Tags._GRAIN_GENERIC_TAG_MASK) != 0n)) {
     // Short circuit for non-pointer values
     x == y
   } else if (isNumber(x)) {
@@ -199,6 +201,10 @@ let rec heapEqualHelp = (heapTag, xptr, yptr) => {
   }
 }
 
-export let equal = (x: a, y: a) => {
-  equalHelp(WasmI32.fromGrain(x), WasmI32.fromGrain(y))
+export let rec equal = (x: a, y: a) => {
+  let ret = equalHelp(WasmI32.fromGrain(x), WasmI32.fromGrain(y))
+  Memory.decRef(WasmI32.fromGrain(x))
+  Memory.decRef(WasmI32.fromGrain(y))
+  Memory.decRef(WasmI32.fromGrain(equal))
+  ret
 }

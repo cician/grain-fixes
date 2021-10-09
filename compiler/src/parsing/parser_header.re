@@ -37,12 +37,18 @@ let make_shebang_comment = (source, loc) => {
 };
 
 let make_block_comment = (source, loc) => {
-  let content = String_utils.slice(~first=2, ~last=-2, source) |> String.trim;
+  let content =
+    String_utils.slice(~first=2, ~last=-2, source)
+    |> String_utils.deasterisk_each_line
+    |> String_utils.trim_each_line;
   Block({cmt_content: content, cmt_source: source, cmt_loc: loc});
 };
 
 let make_doc_comment = (source, loc) => {
-  let content = String_utils.slice(~first=3, ~last=-2, source) |> String.trim;
+  let content =
+    String_utils.slice(~first=3, ~last=-2, source)
+    |> String_utils.deasterisk_each_line
+    |> String_utils.trim_each_line;
   Doc({cmt_content: content, cmt_source: source, cmt_loc: loc});
 };
 
@@ -109,9 +115,15 @@ let fix_blocks = ({statements} as prog) => {
   {...prog, statements: List.map(mapper.toplevel(mapper), statements)};
 };
 
+let is_uppercase_ident = name => {
+  Char_utils.is_uppercase_letter(name.[0]);
+};
+
 let no_record_block = exprs =>
   switch (exprs) {
-  | [{pexp_desc: PExpId({txt: IdentName(_)})}] => raise(Dyp.Giveup)
+  | [{pexp_desc: PExpId({txt: IdentName(name)})}]
+      when !is_uppercase_ident(name) =>
+    raise(Dyp.Giveup)
   | _ => ()
   };
 
@@ -124,11 +136,8 @@ let no_brace_expr = expr =>
 
 let no_uppercase_ident = expr =>
   switch (expr.pexp_desc) {
-  | PExpId({txt: id}) =>
-    let first_char = Identifier.last(id).[0];
-    if (Char_utils.is_uppercase_letter(first_char)) {
-      raise(Dyp.Giveup);
-    };
+  | PExpId({txt: id}) when is_uppercase_ident(Identifier.last(id)) =>
+    raise(Dyp.Giveup)
   | _ => ()
   };
 

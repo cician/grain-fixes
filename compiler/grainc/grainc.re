@@ -26,22 +26,6 @@ let () =
     }
   );
 
-/** `remove_extension` new enough that we should just use this */
-
-let safe_remove_extension = name =>
-  try(Filename.chop_extension(name)) {
-  | Invalid_argument(_) => name
-  };
-
-let default_output_filename = name =>
-  safe_remove_extension(name) ++ ".gr.wasm";
-
-let default_assembly_filename = name =>
-  safe_remove_extension(name) ++ ".wast";
-
-let default_mashtree_filename = name =>
-  safe_remove_extension(name) ++ ".mashtree";
-
 /* Diagnostic mode - read the file to compile from stdin and return nothing or compile errors on stdout */
 let compile_string = name => {
   let program_str = ref("");
@@ -58,10 +42,14 @@ let compile_string = name => {
     ignore(
       {
         let compile_state =
-          Compile.compile_string(~hook=stop_after_typed, ~name, program_str^);
+          Compile.compile_string(
+            ~hook=stop_after_typed_well_formed,
+            ~name,
+            program_str^,
+          );
 
         switch (compile_state.cstate_desc) {
-        | TypeChecked(typed_program) =>
+        | TypedWellFormed(typed_program) =>
           let values: list(Grain_diagnostics.Lenses.lens_t) =
             Grain_diagnostics.Lenses.get_lenses_values(typed_program);
           let warnings: list(Grain_diagnostics.Output.lsp_warning) =
@@ -76,7 +64,9 @@ let compile_string = name => {
               ~values,
             );
           print_endline(json);
-        | _ => ()
+        | _ =>
+          // If you reach this fail, your stop_after_* and variant are mismatched
+          failwith("Impossible by the `stop_after_*` hook")
         };
       },
     )
@@ -109,9 +99,12 @@ let compile_file = (name, outfile_arg) => {
   };
   try({
     let outfile =
-      Option.value(~default=default_output_filename(name), outfile_arg);
+      Option.value(
+        ~default=Compile.default_output_filename(name),
+        outfile_arg,
+      );
     if (Grain_utils.Config.debug^) {
-      Compile.save_mashed(name, default_mashtree_filename(outfile));
+      Compile.save_mashed(name, Compile.default_mashtree_filename(outfile));
     };
     let hook =
       if (Grain_utils.Config.statically_link^) {
@@ -119,7 +112,7 @@ let compile_file = (name, outfile_arg) => {
       } else {
         Compile.stop_after_object_file_emitted;
       };
-    ignore(Compile.compile_file(~hook, ~outfile, name));
+    ignore(Compile.compile_file(~is_root_file=true, ~hook, ~outfile, name));
   }) {
   | exn =>
     let bt =

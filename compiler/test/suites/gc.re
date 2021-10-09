@@ -18,6 +18,7 @@ let makeGcProgram = (program, heap_size) => {
       // Memory is not reclaimed due to no gc context
       // This will actually leak 16 extra bytes because of the headers
       Memory.malloc(WasmI32.sub(toLeak, 16n));
+      void
     }
     leak();
     %s
@@ -35,7 +36,9 @@ let readWholeFile = filename => {
 };
 
 describe("garbage collection", ({test}) => {
+  let assertRun = makeRunner(test);
   let assertFileRun = makeFileRunner(test);
+  let assertMemoryLimitedFileRun = makeFileRunner(~num_pages=1, test);
   let assertRunGC = (name, heapSize, prog) =>
     makeRunner(test, name, makeGcProgram(prog, heapSize), "");
   let assertRunGCError = (name, heapSize, prog, expected) =>
@@ -77,6 +80,12 @@ describe("garbage collection", ({test}) => {
     256,
     "enum Opt<x> { None, Some(x) };\n     let f = (() => {\n      let x = (box(None), 2);\n      let (fst, _) = x\n      fst := Some(x)\n      });\n      {\n        f();\n        let x = (1, 2);\n        x\n      }",
   );
+  /* https://github.com/grain-lang/grain/issues/774 */
+  assertRunGC(
+    "gc3",
+    1024,
+    "let foo = (s: String) => void\nlet printBool = (b: Bool) => foo(if (b) \"true\" else \"false\")\n\nlet b = true\nfor (let mut i=0; i<100000; i += 1) {\n  printBool(true)\n}",
+  );
   assertFileRunGC(
     "fib_gc_err",
     1024,
@@ -91,4 +100,28 @@ describe("garbage collection", ({test}) => {
   assertFileRunGC("long_lists", 20000, "long_lists", "true");
   assertFileRun("malloc_tight", "mallocTight", "");
   assertFileRun("memory_grow1", "memoryGrow", "1000000000000\n");
+  assertMemoryLimitedFileRun(
+    "loop_memory_reclaim",
+    "loopMemoryReclaim",
+    "OK\n",
+  );
+  assertRun(
+    "match_issue893_internal_equals",
+    {|let f = (n: Number) => {
+      match (n) {
+        0 => {
+          void
+        },
+        _ => {
+          void
+        },
+      }
+    }
+
+    f(1)
+    f(2)
+    f(3)
+    print("4")|},
+    "4\n",
+  );
 });

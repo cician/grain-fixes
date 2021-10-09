@@ -179,14 +179,14 @@ any_or_var_pat :
   | ID { Pat.var ~loc:(symbol_rloc dyp) (mkstr dyp $1) }
 
 patterns :
-  | pattern [comma pattern {$2}]* { $1::$2 }
+  | pattern [comma pattern {$2}]* trailing_comma? { $1::$2 }
 
 tuple_patterns :
   | pattern comma { [$1] }
-  | pattern [comma pattern {$2}]+ { $1::$2 }
+  | pattern [comma pattern {$2}]+ trailing_comma? { $1::$2 }
 
 record_patterns :
-  | record_pattern [comma record_pattern {$2}]* { $1::$2 }
+  | record_pattern [comma record_pattern {$2}]* trailing_comma? { $1::$2 }
 
 record_pattern :
   | UNDERSCORE { None, Open }
@@ -222,20 +222,27 @@ value_binds :
 
 import_shape :
   | id { PImportModule $1 }
-  | STAR [EXCEPT lbrace id [comma id {$2}]* rbrace {$3::$4}]? { PImportAllExcept (Option.value ~default:[] $2) }
-  | lbrace [id [AS id {$2}]? [comma id [AS id {$2}]? {($2, $3)}]* {($1, $2)::$3}]? rbrace { PImportValues (Option.value ~default:[] $2) }
+  | STAR [EXCEPT lbrace id [comma id {$2}]* trailing_comma? rbrace {$3::$4}]? { PImportAllExcept (Option.value ~default:[] $2) }
+  | lbrace [id [AS id {$2}]? [comma id [AS id {$2}]? {($2, $3)}]* {($1, $2)::$3}]? trailing_comma? rbrace { PImportValues (Option.value ~default:[] $2) }
 
 import_stmt :
-  | IMPORT import_shape [comma import_shape {$2}]* FROM file_path { Imp.mk ($2::$3) $5 }
+  | IMPORT import_shape [comma import_shape {$2}]* FROM file_path { Imp.mk ~loc:(symbol_rloc dyp) ($2::$3) $5 }
+
+data_declaration_stmt :
+  | EXPORT data_declaration { (Exported, $2) }
+  | data_declaration { (Nonexported, $1) }
+
+data_declaration_stmts :
+  | data_declaration_stmt comma data_declaration_stmts { $1::$3 }
+  | data_declaration_stmt { [$1] }
 
 export_stmt :
-  | attributes EXPORT LET REC value_binds { Top.let_ ~attributes:$1 Exported Recursive Immutable $5 }
-  | attributes EXPORT LET value_binds { Top.let_ ~attributes:$1 Exported Nonrecursive Immutable $4 }
-  | attributes EXPORT LET REC MUT value_binds { Top.let_ ~attributes:$1 Exported Recursive Mutable $6 }
-  | attributes EXPORT LET MUT value_binds { Top.let_ ~attributes:$1 Exported Nonrecursive Mutable $5 }
+  | attributes EXPORT LET REC value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Exported Recursive Immutable $5 }
+  | attributes EXPORT LET value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Exported Nonrecursive Immutable $4 }
+  | attributes EXPORT LET REC MUT value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Exported Recursive Mutable $6 }
+  | attributes EXPORT LET MUT value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Exported Nonrecursive Mutable $5 }
   | EXPORT foreign_stmt { Top.foreign ~loc:(symbol_rloc dyp) Exported $2 }
   | EXPORT primitive_stmt { Top.primitive ~loc:(symbol_rloc dyp) Exported $2 }
-  | EXPORT data_declaration { Top.data Exported $2 }
   | EXPORT exception_stmt { Top.grain_exception ~loc:(symbol_rloc dyp) Exported $2 }
   | EXPORT any_id_str [AS any_id_str {$2}]? [comma any_id_str [AS any_id_str {$2}]? {$2, $3}]* { Top.export ~loc:(symbol_rloc dyp) (Ex.mk ~loc:(symbol_rloc dyp) (($2, $3)::$4)) }
   | EXPORT STAR [EXCEPT export_id_str [comma export_id_str {$2}]* {$2::$3}]? { Top.export_all ~loc:(symbol_rloc dyp) (Option.value ~default:[] $3) }
@@ -402,7 +409,7 @@ lam_args :
   | patterns? { Option.value ~default:[] $1 }
 
 lam_expr :
-  | lparen lam_args trailing_comma? rparen thickarrow block_or_expr { Exp.lambda ~loc:(symbol_rloc dyp) $2 $6 }
+  | lparen lam_args rparen thickarrow block_or_expr { Exp.lambda ~loc:(symbol_rloc dyp) $2 $5 }
   | ID thickarrow block_or_expr { Exp.lambda ~loc:(symbol_rloc dyp) [Pat.var ~loc:(rhs_loc dyp 1) (mkstr dyp $1)] $3 }
 
 attributes :
@@ -496,7 +503,7 @@ block_body_expr :
   | expr  { $1 }
 
 block_body_stmt :
-  | block_body_expr SEMI eols? { Exp.ignore $1 }
+  | block_body_expr SEMI eols? { $1 }
   | block_body_expr eols { $1 }
 
 tuple_exprs :
@@ -507,7 +514,7 @@ array_get :
   | left_accessor_expr lbrack expr rbrack { Exp.array_get ~loc:(symbol_rloc dyp) $1 $3 }
 
 array_set :
-  | expr lbrack expr rbrack equal eols? expr { Exp.array_set ~loc:(symbol_rloc dyp) $1 $3 $7 }
+  | expr lbrack expr rbrack equal expr { Exp.array_set ~loc:(symbol_rloc dyp) $1 $3 $6 }
 
 record_get :
   | left_accessor_expr dot simple_id { no_uppercase_ident $1; Exp.record_get $1 $3 }
@@ -525,7 +532,7 @@ record_exprs :
   | [record_field | record_pun] [comma [record_field | record_pun] {$2}]* trailing_comma? {$1::$2}
 
 block_body :
-  | block_body_stmt* block_body_expr SEMI { $1 @ [Exp.ignore $2] }
+  | block_body_stmt* block_body_expr SEMI { $1 @ [$2] }
   | block_body_stmt* block_body_expr { $1 @ [$2] }
 
 file_path :
@@ -558,16 +565,16 @@ exception_stmt :
   | EXCEPTION type_id_str lparen typs rparen { Except.tuple ~loc:(symbol_rloc dyp) $2 $4 }
 
 toplevel_stmt :
-  | attributes LET REC value_binds { Top.let_ ~attributes:$1 Nonexported Recursive Immutable $4 }
-  | attributes LET value_binds { Top.let_ ~attributes:$1 Nonexported Nonrecursive Immutable $3 }
-  | attributes LET REC MUT value_binds { Top.let_ ~attributes:$1 Nonexported Recursive Mutable $5 }
-  | attributes LET MUT value_binds { Top.let_ ~attributes:$1 Nonexported Nonrecursive Mutable $4 }
-  | expr { Top.expr $1 }
-  | import_stmt { Top.import $1 }
+  | attributes LET REC value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Nonexported Recursive Immutable $4 }
+  | attributes LET value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Nonexported Nonrecursive Immutable $3 }
+  | attributes LET REC MUT value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Nonexported Recursive Mutable $5 }
+  | attributes LET MUT value_binds { Top.let_ ~loc:(symbol_rloc dyp) ~attributes:$1 Nonexported Nonrecursive Mutable $4 }
+  | expr { Top.expr ~loc:(symbol_rloc dyp) $1 }
+  | import_stmt { Top.import ~loc:(symbol_rloc dyp) $1 }
   | IMPORT foreign_stmt { Top.foreign ~loc:(symbol_rloc dyp) Nonexported $2 }
+  | data_declaration_stmts { Top.data ~loc:(symbol_rloc dyp) $1 }
   | export_stmt { $1 }
   | primitive_stmt { Top.primitive ~loc:(symbol_rloc dyp) Nonexported $1 }
-  | data_declaration { Top.data Nonexported $1 }
   | exception_stmt { Top.grain_exception ~loc:(symbol_rloc dyp) Nonexported $1 }
 
 toplevel_stmts :

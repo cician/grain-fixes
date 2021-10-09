@@ -1,13 +1,15 @@
+type optimization_level =
+  | Level_zero
+  | Level_one
+  | Level_two
+  | Level_three;
+
 /** The Grain stdlib directory, based on the current configuration */
 let stdlib_directory: unit => option(string);
 
 /** The list of directories to search for modules in, based on the current configuration */
 
 let module_search_path: unit => list(string);
-
-/** The list of directories to search for modules in, based on the current configuration (relative to the given base path) */
-
-let module_search_path_from_base_path: string => list(string);
 
 /** Whether verbose output should be written */
 
@@ -26,9 +28,21 @@ let no_pervasives: ref(bool);
 
 let no_gc: ref(bool);
 
+/** Whether to enable bulk memory operations */
+
+let bulk_memory: ref(bool);
+
+/** Custom WASI implementation */
+
+let wasi_polyfill: ref(option(string));
+
+/** Whether to replace the _start export with a start section during linking */
+
+let use_start_section: ref(bool);
+
 /** Whether optimizations should be run */
 
-let optimizations_enabled: ref(bool);
+let optimization_level: ref(optimization_level);
 
 /** The path to find modules on */
 
@@ -108,11 +122,30 @@ let safe_string: ref(bool);
 
 let lsp_mode: ref(bool);
 
+/** Internal option to disable printing of warnings. */
+
+let print_warnings: ref(bool);
+
 /*** Configuration Saving/Restoring */
 
-/** Abstract type representing a saved set of configuration options */
+/** Type representing a saved set of configuration options */
 
-type config;
+type saved_config_opt =
+  | SavedOpt((ref('a), 'a)): saved_config_opt;
+
+type config = list(saved_config_opt);
+
+/** The current configuration for all programs */
+
+let root_config: ref(config);
+
+/** Set the configuration for all programs */
+
+let set_root_config: unit => unit;
+
+/** Gets a digest of the root configuration */
+
+let get_root_config_digest: unit => string;
 
 /** Saves the current configuration */
 
@@ -134,6 +167,14 @@ let with_config: (config, unit => 'a) => 'a;
     are contained to its execution. */
 
 let preserve_config: (unit => 'a) => 'a;
+
+/** Runs the given thunk with the given root configuration */
+let with_root_config: (config, unit => 'a) => 'a;
+
+/** Runs the given thunk, making sure that any changes to the configuration
+    and root configuration are contained to its execution. */
+
+let preserve_all_configs: (unit => 'a) => 'a;
 
 /** Wraps the given thunk with extractors for compiler command-line options */
 

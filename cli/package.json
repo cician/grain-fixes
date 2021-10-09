@@ -1,6 +1,6 @@
 {
   "name": "@grain/cli",
-  "version": "0.3.2",
+  "version": "0.4.2",
   "description": "A command line tool for the Grain language.",
   "main": "index.js",
   "engines": {
@@ -11,7 +11,7 @@
     "format": "prettier --write .",
     "check-format": "prettier --check .",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build-pkg": "pkg ./package.json --no-bytecode --output ../pkg/grain"
+    "build-pkg": "pkg ./package.json --no-bytecode --compress Brotli --output ../pkg/grain"
   },
   "pkg": {
     "assets": "bin/*.js"
@@ -34,12 +34,12 @@
   },
   "homepage": "https://github.com/grain-lang/grain#readme",
   "dependencies": {
-    "@grain/runtime": "*",
-    "@grain/stdlib": "^0.3.2",
-    "commander": "^7.2.0"
+    "@grain/js-runner": "^0.4.0",
+    "@grain/stdlib": "^0.4.1",
+    "commander": "^8.1.0"
   },
   "devDependencies": {
-    "@phated/pkg": "4.5.1-grain",
-    "prettier": "^2.2.1"
+    "pkg": "^5.3.1",
+    "prettier": "^2.3.2"
   }
 }

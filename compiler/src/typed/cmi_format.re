@@ -57,20 +57,33 @@ and cmi_crcs_to_yojson = [%to_yojson: list((string, option(cmi_digest)))];
 [@deriving (sexp, yojson)]
 type cmi_infos = {
   cmi_name: string,
-  cmi_sign: list(Types.signature_item),
+  cmi_sign: Types.signature,
   cmi_crcs,
   cmi_flags: list(pers_flags),
+  cmi_config_sum: string,
 };
+
+type config_opt =
+  | Cmi_config_opt('a): config_opt;
+
+let config_sum = Config.get_root_config_digest;
 
 let build_full_cmi = (~name, ~sign, ~crcs, ~flags) => {
-  let ns_sign = Marshal.to_bytes((name, sign), []);
+  let ns_sign = Marshal.to_bytes((name, sign, config_sum()), []);
   let crc = Digest.bytes(ns_sign);
   let crcs = [(name, Some(crc)), ...crcs];
-  {cmi_name: name, cmi_sign: sign, cmi_crcs: crcs, cmi_flags: flags};
+  let cmi_config_sum = config_sum();
+  {
+    cmi_name: name,
+    cmi_sign: sign,
+    cmi_crcs: crcs,
+    cmi_flags: flags,
+    cmi_config_sum,
+  };
 };
 
-let cmi_to_crc = ({cmi_name, cmi_sign}) => {
-  let ns_sign = Marshal.to_bytes((cmi_name, cmi_sign), []);
+let cmi_to_crc = ({cmi_name, cmi_sign, cmi_config_sum}) => {
+  let ns_sign = Marshal.to_bytes((cmi_name, cmi_sign, cmi_config_sum), []);
   let crc = Digest.bytes(ns_sign);
   crc;
 };

@@ -49,13 +49,6 @@ let read_file_cmi = f => {
   };
 };
 
-let () = {
-  Fs_access.register_cache_flusher((
-    Hashtbl.remove(cmi_cache),
-    () => Hashtbl.clear(cmi_cache),
-  ));
-};
-
 let get_output_name = name => {
   let name =
     try(Filename.chop_extension(name)) {
@@ -75,14 +68,18 @@ let find_ext_in_dir = (dir, name) => {
   process_ext;
 };
 
-let find_in_path_uncap = (~exts=[], path, name) => {
+let is_relpath = path =>
+  Filename.is_relative(path) && !Filename.is_implicit(path);
+
+let find_in_path_uncap = (~exts=[], base_dir, path, name) => {
   let rec try_dir =
     fun
     | [] => raise(Not_found)
-    | [dir, ...rem] =>
-      switch (find_ext_in_dir(dir, name, exts)) {
-      | Some(path) => path
-      | None => try_dir(rem)
+    | [dir, ...rem] => {
+        switch (find_ext_in_dir(dir, name, exts)) {
+        | Some(path) => path
+        | None => try_dir(rem)
+        };
       };
   if (!Filename.is_relative(name) && Grain_utils.Fs_access.file_exists(name)) {
     (
@@ -91,6 +88,8 @@ let find_in_path_uncap = (~exts=[], path, name) => {
       Filename.remove_extension(Filename.basename(name)),
       Filename.extension(name),
     );
+  } else if (is_relpath(name)) {
+    try_dir([base_dir]);
   } else {
     try(try_dir(path)) {
     | Not_found => raise(Not_found)
@@ -99,42 +98,42 @@ let find_in_path_uncap = (~exts=[], path, name) => {
 };
 
 module PathTbl = {
-  type t('a) = Hashtbl.t((string, string), 'a);
+  type t('a) = Hashtbl.t(string, 'a);
   let create: int => t('a) = Hashtbl.create;
 
-  let add: (t('a), (string, string), 'a) => unit = Hashtbl.add;
-
-  let find_opt: (t('a), list(string), string) => option('a) =
-    (tbl, path, unit_name) => {
-      List.fold_left(
-        (acc, elt) => {
-          switch (acc) {
-          | Some(_) => acc
-          | None => Hashtbl.find_opt(tbl, (elt, unit_name))
-          }
-        },
-        None,
-        path,
-      );
+  let add: (t('a), (string, string), 'a) => unit =
+    (tbl, (dir, unit_name), v) => {
+      let dir = Grain_utils.Files.realpath_quick(dir);
+      Hashtbl.add(tbl, Grain_utils.Files.smart_cat(dir, unit_name), v);
     };
 
-  let remove: (t('a), (string, string)) => unit = Hashtbl.remove;
-
-  let remove_any_matching: (t('a), list(string), string) => unit =
-    (tbl, path, unit_name) => {
-      List.iter(elt => Hashtbl.remove(tbl, (elt, unit_name)), path);
-    };
-
-  let remove_any_with_unit_name: (t('a), string) => unit =
-    (tbl, unit_name) => {
-      Seq.iter(
-        Hashtbl.remove(tbl),
-        Seq.filter(
-          ((_, un)) => String.equal(un, unit_name),
-          Hashtbl.to_seq_keys(tbl),
-        ),
-      );
-    };
+  let find_opt:
+    (~disable_relpath: bool=?, t('a), string, list(string), string) =>
+    option('a) =
+    (~disable_relpath=false, tbl, base_path, path, unit_name) =>
+      if (!disable_relpath && is_relpath(unit_name)) {
+        Hashtbl.find_opt(
+          tbl,
+          Grain_utils.Files.canonicalize_relpath(base_path, unit_name),
+        );
+      } else {
+        List.fold_left(
+          (acc, elt) => {
+            switch (acc) {
+            | Some(_) => acc
+            | None =>
+              Hashtbl.find_opt(
+                tbl,
+                Grain_utils.Files.(
+                  smart_cat(realpath_quick(elt), unit_name)
+                ),
+              )
+            }
+          },
+          None,
+          path,
+        );
+      };
 };
 
 let located_module_cache:
@@ -143,20 +142,20 @@ let located_module_cache:
 let resolutions: Hashtbl.t(string, PathTbl.t(string)) = Hashtbl.create(16);
 
 let current_located_module_cache = () => {
-  switch (Hashtbl.find_opt(located_module_cache, current_unit_name^())) {
+  switch (Hashtbl.find_opt(located_module_cache, current_filename^())) {
   | Some(v) => v
   | None =>
     let new_table = PathTbl.create(12);
-    Hashtbl.add(located_module_cache, current_unit_name^(), new_table);
+    Hashtbl.add(located_module_cache, current_filename^(), new_table);
     new_table;
   };
 };
 let current_resolution_table = () => {
-  switch (Hashtbl.find_opt(resolutions, current_unit_name^())) {
+  switch (Hashtbl.find_opt(resolutions, current_filename^())) {
   | Some(v) => v
   | None =>
     let new_table = PathTbl.create(12);
-    Hashtbl.add(resolutions, current_unit_name^(), new_table);
+    Hashtbl.add(resolutions, current_filename^(), new_table);
     new_table;
   };
 };
@@ -168,7 +167,12 @@ let log_resolution = (unit_name, dir, basename) => {
   resolution;
 };
 
-let resolve_unit = (~search_path=?, ~cache=true, unit_name) => {
+let resolve_unit = (~search_path=?, ~cache=true, ~base_dir=?, unit_name) => {
+  let base_dir =
+    switch (base_dir) {
+    | None => Filename.dirname(current_filename^())
+    | Some(bd) => bd
+    };
   let path =
     switch (search_path) {
     | None => Grain_utils.Config.module_search_path()
@@ -176,12 +180,13 @@ let resolve_unit = (~search_path=?, ~cache=true, unit_name) => {
     };
   switch (
     cache,
-    PathTbl.find_opt(current_resolution_table(), path, unit_name),
+    PathTbl.find_opt(current_resolution_table(), base_dir, path, unit_name),
   ) {
   | (true, Some(res)) => res
   | _ =>
     let exts = [".gr", ".gr.wasm"];
-    let (_, dir, basename, _) = find_in_path_uncap(~exts, path, unit_name);
+    let (_, dir, basename, _) =
+      find_in_path_uncap(~exts, base_dir, path, unit_name);
     if (cache) {
       log_resolution(unit_name, dir, basename);
     } else {
@@ -190,13 +195,23 @@ let resolve_unit = (~search_path=?, ~cache=true, unit_name) => {
   };
 };
 
-let locate_module = (path, unit_name) => {
-  switch (PathTbl.find_opt(current_located_module_cache(), path, unit_name)) {
+let locate_module = (~disable_relpath=false, base_dir, path, unit_name) => {
+  switch (
+    PathTbl.find_opt(
+      ~disable_relpath,
+      current_located_module_cache(),
+      base_dir,
+      path,
+      unit_name,
+    )
+  ) {
   | Some(m) => m
   | None =>
     let grain_src_exts = [".gr"];
     let (dir, m) =
-      switch (find_in_path_uncap(~exts=[".gr.wasm"], path, unit_name)) {
+      switch (
+        find_in_path_uncap(~exts=[".gr.wasm"], base_dir, path, unit_name)
+      ) {
       | (objpath, dir, basename, ext) =>
         ignore(log_resolution(unit_name, dir, basename));
         switch (find_ext_in_dir(dir, basename, grain_src_exts)) {
@@ -208,7 +223,7 @@ let locate_module = (path, unit_name) => {
         };
       | exception Not_found =>
         let (srcpath, dir, _, _) =
-          find_in_path_uncap(~exts=grain_src_exts, path, unit_name);
+          find_in_path_uncap(~exts=grain_src_exts, base_dir, path, unit_name);
         (dir, GrainModule(srcpath, None));
       };
     PathTbl.add(current_located_module_cache(), (dir, unit_name), m);
@@ -236,13 +251,18 @@ let located_to_out_file_name = (~base=?, located) => {
   Grain_utils.Files.derelativize(~base?, ret);
 };
 
-let locate_unit_object_file = (~path=?, unit_name) => {
+let locate_unit_object_file = (~path=?, ~base_dir=?, unit_name) => {
+  let base_dir =
+    switch (base_dir) {
+    | None => Filename.dirname(current_filename^())
+    | Some(bd) => bd
+    };
   let path =
     switch (path) {
     | Some(p) => p
     | None => Grain_utils.Config.module_search_path()
     };
-  located_to_out_file_name(locate_module(path, unit_name));
+  located_to_out_file_name(locate_module(base_dir, path, unit_name));
 };
 
 module Dependency_graph =
@@ -258,6 +278,7 @@ module Dependency_graph =
 
     let get_dependencies: (t, string => option(t)) => list(t) =
       (dn, lookup) => {
+        let base_dir = Filename.dirname(dn.dn_file_name);
         let active_search_path = Config.module_search_path();
         let located = dn.dn_latest_resolution^;
         // TODO: (#597) Propagating the compiler flag information correctly is tricky.
@@ -270,7 +291,8 @@ module Dependency_graph =
           let ret =
             List.map(
               name => {
-                let located = locate_module(active_search_path, name);
+                let located =
+                  locate_module(base_dir, active_search_path, name);
                 let out_file_name = located_to_out_file_name(located);
                 let existing_dependency = lookup(out_file_name);
                 switch (existing_dependency) {
@@ -296,7 +318,8 @@ module Dependency_graph =
           let ret =
             List.map(
               ((name, _)) => {
-                let located = locate_module(active_search_path, name);
+                let located =
+                  locate_module(base_dir, active_search_path, name);
                 let out_file_name = located_to_out_file_name(located);
                 let existing_dependency = lookup(out_file_name);
                 switch (existing_dependency) {
@@ -332,14 +355,18 @@ module Dependency_graph =
           // WASM modules are always up-to-date
           dn.dn_up_to_date := true
         | (false, Some(GrainModule(srcpath, Some(objpath)))) =>
-          // Compiled file is up-to-date if the srcpath is older than the objpath and
-          // all dependencies have expected CRC. Otherwise, we need to recompile.
+          // Compiled file is up-to-date if the srcpath is older than the objpath,
+          // all dependencies have expected CRC, and the module was compiled with
+          // the current compiler configuration. Otherwise, we need to recompile.
+          let config_sum = Cmi_format.config_sum();
           let cmi = read_file_cmi(objpath);
+          let base_dir = Filename.dirname(srcpath);
           dn.dn_up_to_date :=
-            file_older(srcpath, objpath)
+            config_sum == cmi.cmi_config_sum
+            && file_older(srcpath, objpath)
             && List.for_all(
                  ((name, crc)) => {
-                   let resolved = resolve_unit(name);
+                   let resolved = resolve_unit(~base_dir, name);
                    let out_file_name = get_output_name(resolved);
                    Fs_access.file_exists(out_file_name)
                    && (
@@ -388,10 +415,6 @@ module Dependency_graph =
         )
       );
       dn.dn_latest_resolution := Some(GrainModule(srcpath, Some(outpath)));
-      PathTbl.remove_any_with_unit_name(
-        current_located_module_cache(),
-        chosen_unit_name,
-      );
       dn.dn_up_to_date := true;
       PathTbl.add(
         current_located_module_cache(),
@@ -401,11 +424,13 @@ module Dependency_graph =
     };
   });
 
-let locate_module_file = (~loc, path, unit_name) => {
+let locate_module_file = (~loc, ~disable_relpath=false, unit_name) => {
   /* NOTE: We need to take care here to *not* wrap get_up_to_date with this try/with, since
      it will falsely raise No_module_file if a Not_found is raised during the compilation */
+  let base_dir = Filename.dirname(current_filename^());
+  let path = Grain_utils.Config.module_search_path();
   let located =
-    try(locate_module(path, unit_name)) {
+    try(locate_module(~disable_relpath, base_dir, path, unit_name)) {
     | Not_found => error(No_module_file(unit_name, None))
     };
   let out_file = located_to_out_file_name(located);
@@ -435,7 +460,21 @@ let locate_module_file = (~loc, path, unit_name) => {
 
 let clear_dependency_graph = () => {
   Dependency_graph.clear();
-  Hashtbl.clear(cmi_cache);
+};
+
+let () = {
+  Fs_access.register_cache_flusher((
+    Hashtbl.remove(cmi_cache),
+    () => Hashtbl.clear(cmi_cache),
+  ));
+  Fs_access.register_cache_flusher((
+    Hashtbl.remove(located_module_cache),
+    () => Hashtbl.clear(located_module_cache),
+  ));
+  Fs_access.register_cache_flusher((
+    Hashtbl.remove(resolutions),
+    () => Hashtbl.clear(resolutions),
+  ));
 };
 
 let dump_dependency_graph = Dependency_graph.dump;
@@ -478,3 +517,5 @@ let () =
     | Error(err) => Some(Location.error_of_printer_file(report_error, err))
     | _ => None,
   );
+
+let () = Printexc.record_backtrace(true);

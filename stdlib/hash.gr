@@ -21,10 +21,21 @@ import WasmI32, {
   ltU as (<)
 } from "runtime/unsafe/wasmi32"
 import Tags from "runtime/unsafe/tags"
+import Memory from "runtime/unsafe/memory"
 
 import { tagSimpleNumber } from "runtime/dataStructures"
+import { coerceNumberToWasmI32 } from "runtime/numbers"
 
-let seed = 0xe444n
+import Random from "sys/random"
+import Result from "result"
+
+let seed = {
+  Memory.incRef(WasmI32.fromGrain(Random.random))
+  Memory.incRef(WasmI32.fromGrain(Result.unwrap))
+  let random = Random.random()
+  Memory.incRef(WasmI32.fromGrain(random))
+  coerceNumberToWasmI32(Result.unwrap(random))
+}
 
 let _MAX_HASH_DEPTH = 31n
 
@@ -75,7 +86,7 @@ let rec hashOne = (val, depth) => {
   } else if ((val & Tags._GRAIN_GENERIC_TAG_MASK) == Tags._GRAIN_GENERIC_HEAP_TAG_TYPE) {
     let heapPtr = val
     match (WasmI32.load(heapPtr, 0n)) {
-      t when t == Tags._GRAIN_STRING_HEAP_TAG => {
+      t when t == Tags._GRAIN_STRING_HEAP_TAG || t == Tags._GRAIN_BYTES_HEAP_TAG => {
         let length = WasmI32.load(heapPtr, 4n)
         let extra = length % 4n
         let l = length - extra

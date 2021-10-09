@@ -5,9 +5,15 @@
 </p>
 
 <p align="center">
-    <a target="_blank" rel="noopener noreferrer" href="https://github.com/grain-lang/grain/workflows/Grain%20CI%20Workflow/badge.svg"><img src="https://github.com/grain-lang/grain/workflows/Grain%20CI%20Workflow/badge.svg" alt="Grain CI Workflow" style="max-width:100%;"></a>
-    <a href="https://www.gnu.org/licenses/lgpl-3.0" rel="nofollow"><img src="https://camo.githubusercontent.com/4e8beb53bf7fc54e0addd2106a833503fc81a083/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4c47504c25323076332d626c75652e737667" alt="License: LGPL v3" data-canonical-src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" style="max-width:100%;"></a>
-    <a href="https://badge.fury.io/gh/grain-lang%2Fgrain" rel="nofollow"><img src="https://camo.githubusercontent.com/909d4481f00303c64c5b47ae8d62b791726960d3/68747470733a2f2f62616467652e667572792e696f2f67682f677261696e2d6c616e67253246677261696e2e737667" alt="GitHub version" data-canonical-src="https://badge.fury.io/gh/grain-lang%2Fgrain.svg" style="max-width:100%;"></a>
+    <a href="https://github.com/grain-lang/grain/actions/workflows/ci.yml">
+        <img src="https://img.shields.io/github/workflow/status/grain-lang/grain/Grain%20CI%20Workflow?style=flat-square" alt="Grain CI Workflow">
+    </a>
+    <a href="https://choosealicense.com/licenses/lgpl-3.0/">
+        <img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg?style=flat-square" alt="License: LGPL v3">
+    </a>
+    <a href="https://github.com/grain-lang/grain/releases">
+        <img alt="Grain latest release version" src="https://img.shields.io/github/package-json/v/grain-lang/grain?color=rgb%28255%2C%20133%2C%2014%29&style=flat-square">
+    </a>
 </p>
 
 ---
@@ -22,43 +28,14 @@ There are tons of ways to contribute to Grain. Check out our [contributing guide
 
 ## Building
 
-Grain currently only works on Mac and Linux. We are hard at work trying to integrate Binaryen and OCaml on Windows, but this is uncharted territory! Please let us know if you have this low-level expertise. :bow:
-
-To build Grain, you'll need [Node.js](https://nodejs.org/en/download/current/) v14 and [Yarn](https://yarnpkg.com/getting-started/install). To get everything set up, run:
-
-```bash
-yarn
-yarn compiler build
-```
-
-This will set up the Grain runtime, standard library, and CLI.
-
-If running tests is your kind of thing, run
-
-```bash
-yarn compiler test
-```
-
-If you are using `vscode` as your editor, we recommend you run:
-
-```bash
-yarn vscode
-```
-
-This will create local settings that point OCaml LSP to our `compiler` directory. Then, you should be able to use the [OCaml Platform](https://github.com/ocamllabs/vscode-ocaml-platform) extension!
+For instructions on how to build Grain from source, please consult the [official documentation](https://grain-lang.org/docs/getting_grain#Building-Grain-from-Source).
 
 ### Other Commands
 
-To build the standard library:
+To build the JS runner:
 
 ```bash
-yarn stdlib build
-```
-
-To build the runtime:
-
-```bash
-yarn runtime build
+yarn js-runner build
 ```
 
 To link the CLI:
@@ -81,25 +58,4 @@ yarn run
 
 This will display an interactive session where you can select the project and command you want.
 
-## Running Grain Programs
-
-You can run programs using the Grain CLI:
-
-```bash
-echo "print('Hello world')" > hello.gr
-grain hello.gr
-```
-
-Alternatively, you can invoke the compiler directly:
-
-```bash
-grain compile hello.gr
-```
-
-and then to run the compiled program:
-
-```bash
-grain run hello.gr.wasm
-```
-
-Copyright ©️ 2017-2020 Philip Blair, Oscar Spencer, & contributors.
+Copyright ©️ 2017-2021 Philip Blair, Oscar Spencer, & contributors.

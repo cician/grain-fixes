@@ -1,19 +1,26 @@
 open TestFramework;
+open WarningExtensions;
 open Grain.Compile;
 open Grain_utils;
 open Grain_middle_end.Anftree;
 open Grain_middle_end.Anf_helper;
 
-let test_dir = Filename.concat(Sys.getcwd(), "test");
-let test_libs_dir = Filename.concat(test_dir, "test-libs");
-let test_input_dir = Filename.concat(test_dir, "input");
-let test_output_dir = Filename.concat(test_dir, "output");
-let test_stdlib_dir = Filename.concat(test_dir, "stdlib");
+type customMatchers = {warning: warningExtensions};
+
+let customMatchers = createMatcher => {
+  warning: warningExtensions(createMatcher),
+};
 
 let grainfile = name => Filename.concat(test_input_dir, name ++ ".gr");
 let stdlibfile = name => Filename.concat(test_stdlib_dir, name ++ ".gr");
 let wasmfile = name => Filename.concat(test_output_dir, name ++ ".gr.wasm");
 let watfile = name => Filename.concat(test_output_dir, name ++ ".gr.wat");
+
+let formatter_out_file = name =>
+  Filename.concat(test_formatter_out_dir, name ++ ".gr");
+
+let formatter_in_file = name =>
+  Filename.concat(test_formatter_in_dir, name ++ ".gr");
 
 let read_stream = cstream => {
   let buf = Bytes.create(2048);
@@ -32,18 +39,48 @@ let read_stream = cstream => {
   Bytes.to_string @@ Bytes.sub(buf, 0, i^);
 };
 
-let compile = (~hook=?, name, prog) => {
-  Config.preserve_config(() => {
-    Config.include_dirs := [test_libs_dir, ...Config.include_dirs^];
-    let outfile = wasmfile(name);
-    ignore @@ compile_string(~hook?, ~name, ~outfile, prog);
+let compile = (~num_pages=?, ~config_fn=?, ~hook=?, name, prog) => {
+  Config.preserve_all_configs(() => {
+    Config.with_config(
+      [],
+      () => {
+        switch (config_fn) {
+        | Some(fn) => fn()
+        | None => ()
+        };
+        switch (num_pages) {
+        | Some(pages) =>
+          Config.initial_memory_pages := pages;
+          Config.maximum_memory_pages := Some(pages);
+        | None => ()
+        };
+        Config.include_dirs := [test_libs_dir, ...Config.include_dirs^];
+        let outfile = wasmfile(name);
+        compile_string(~is_root_file=true, ~hook?, ~name, ~outfile, prog);
+      },
+    )
   });
 };
 
-let compile_file = (~hook=?, filename, outfile) => {
-  Config.preserve_config(() => {
-    Config.include_dirs := [test_libs_dir, ...Config.include_dirs^];
-    ignore @@ compile_file(~hook?, ~outfile, filename);
+let compile_file = (~num_pages=?, ~config_fn=?, ~hook=?, filename, outfile) => {
+  Config.preserve_all_configs(() => {
+    Config.with_config(
+      [],
+      () => {
+        switch (config_fn) {
+        | Some(fn) => fn()
+        | None => ()
+        };
+        switch (num_pages) {
+        | Some(pages) =>
+          Config.initial_memory_pages := pages;
+          Config.maximum_memory_pages := Some(pages);
+        | None => ()
+        };
+        Config.include_dirs := [test_libs_dir, ...Config.include_dirs^];
+        compile_file(~is_root_file=true, ~hook?, ~outfile, filename);
+      },
+    )
   });
 };
 
@@ -89,6 +126,46 @@ let run = (~num_pages=?, file) => {
     Unix.open_process_full(command, Unix.environment());
 
   let pid = Unix.process_full_pid((stdout, stdin, stderr));
+  let (_, status, timed_out) =
+    try({
+      let (x, status) = Test_utils.waitpid_timeout(15., pid);
+      (x, status, false);
+    }) {
+    | Test_utils.Timeout =>
+      Unix.kill(pid, 9);
+      ((-1), Unix.WEXITED(-1), true);
+    };
+
+  let out = read_stream(Stream.of_channel(stdout));
+  let err = read_stream(Stream.of_channel(stderr));
+
+  close_in(stdout);
+  close_in(stderr);
+  close_out(stdin);
+
+  let code =
+    switch (status) {
+    | Unix.WEXITED(code) => code
+    | _ => failwith("process did not exit properly")
+    };
+
+  let out =
+    if (timed_out) {
+      "Timed out!\n" ++ out;
+    } else {
+      out;
+    };
+  (out ++ err, code);
+};
+
+let format = file => {
+  let args = ["grain", "format", file];
+  let command = String.concat(" ", args);
+
+  let (stdout, stdin, stderr) =
+    Unix.open_process_full(command, Unix.environment());
+
+  let pid = Unix.process_full_pid((stdout, stdin, stderr));
   let (_, status) = Unix.waitpid([], pid);
 
   let out = read_stream(Stream.of_channel(stdout));
@@ -111,7 +188,7 @@ let makeSnapshotRunner = (test, name, prog) => {
   test(
     name,
     ({expect}) => {
-      compile(~hook=stop_after_object_file_emitted, name, prog);
+      ignore @@ compile(~hook=stop_after_object_file_emitted, name, prog);
       expect.file(watfile(name)).toMatchSnapshot();
     },
   );
@@ -123,6 +200,7 @@ let makeSnapshotFileRunner = (test, name, filename) => {
     ({expect}) => {
       let infile = grainfile(filename);
       let outfile = wasmfile(name);
+      ignore @@
       compile_file(~hook=stop_after_object_file_emitted, infile, outfile);
       let file = watfile(name);
       expect.file(file).toMatchSnapshot();
@@ -137,7 +215,7 @@ let makeCompileErrorRunner = (test, name, prog, msg) => {
       let error =
         try(
           {
-            compile(name, prog);
+            ignore @@ compile(name, prog);
             "";
           }
         ) {
@@ -148,16 +226,30 @@ let makeCompileErrorRunner = (test, name, prog, msg) => {
   );
 };
 
-let makeRunner = (test, ~num_pages=?, name, prog, expected) => {
+let makeWarningRunner = (test, name, prog, warning) => {
   test(name, ({expect}) => {
-    Config.preserve_config(() => {
-      switch (num_pages) {
-      | Some(pages) =>
-        Config.initial_memory_pages := pages;
-        Config.maximum_memory_pages := Some(pages);
-      | None => ()
-      };
-      compile(name, prog);
+    Config.preserve_all_configs(() => {
+      Config.print_warnings := false;
+      ignore @@ compile(name, prog);
+      expect.ext.warning.toHaveTriggered(warning);
+    })
+  });
+};
+
+let makeNoWarningRunner = (test, name, prog) => {
+  test(name, ({expect}) => {
+    Config.preserve_all_configs(() => {
+      Config.print_warnings := false;
+      ignore @@ compile(name, prog);
+      expect.ext.warning.toHaveTriggeredNoWarnings();
+    })
+  });
+};
+
+let makeRunner = (test, ~num_pages=?, ~config_fn=?, name, prog, expected) => {
+  test(name, ({expect}) => {
+    Config.preserve_all_configs(() => {
+      ignore @@ compile(~num_pages?, ~config_fn?, name, prog);
       let (result, _) = run(~num_pages?, wasmfile(name));
       expect.string(result).toEqual(expected);
     })
@@ -165,16 +257,18 @@ let makeRunner = (test, ~num_pages=?, name, prog, expected) => {
 };
 
 let makeErrorRunner =
-    (test, ~check_exists=true, ~num_pages=?, name, prog, expected) => {
+    (
+      test,
+      ~check_exists=true,
+      ~num_pages=?,
+      ~config_fn=?,
+      name,
+      prog,
+      expected,
+    ) => {
   test(name, ({expect}) => {
-    Config.preserve_config(() => {
-      switch (num_pages) {
-      | Some(pages) =>
-        Config.initial_memory_pages := pages;
-        Config.maximum_memory_pages := Some(pages);
-      | None => ()
-      };
-      compile(name, prog);
+    Config.preserve_all_configs(() => {
+      ignore @@ compile(~num_pages?, ~config_fn?, name, prog);
       let (result, _) = run(~num_pages?, wasmfile(name));
       if (check_exists) {
         expect.string(result).toMatch(expected);
@@ -185,17 +279,17 @@ let makeErrorRunner =
   });
 };
 
-let makeFileRunner = (test, name, filename, expected) => {
-  test(
-    name,
-    ({expect}) => {
+let makeFileRunner =
+    (test, ~num_pages=?, ~config_fn=?, name, filename, expected) => {
+  test(name, ({expect}) => {
+    Config.preserve_all_configs(() => {
       let infile = grainfile(filename);
       let outfile = wasmfile(name);
-      compile_file(infile, outfile);
+      ignore @@ compile_file(~num_pages?, ~config_fn?, infile, outfile);
       let (result, _) = run(outfile);
       expect.string(result).toEqual(expected);
-    },
-  );
+    })
+  });
 };
 
 let makeFileErrorRunner = (test, name, filename, expected) => {
@@ -204,7 +298,7 @@ let makeFileErrorRunner = (test, name, filename, expected) => {
     ({expect}) => {
       let infile = grainfile(filename);
       let outfile = wasmfile(name);
-      compile_file(infile, outfile);
+      ignore @@ compile_file(infile, outfile);
       let (result, _) = run(outfile);
       expect.string(result).toMatch(expected);
     },
@@ -217,7 +311,7 @@ let makeStdlibRunner = (test, ~code=0, name) => {
     ({expect}) => {
       let infile = stdlibfile(name);
       let outfile = wasmfile(name);
-      compile_file(infile, outfile);
+      ignore @@ compile_file(infile, outfile);
       let (result, exit_code) = run(outfile);
       expect.int(exit_code).toBe(code);
       expect.string(result).toEqual("");
@@ -244,7 +338,13 @@ let parseFile = (name, input_file) => {
 };
 
 let makeParseRunner =
-    (test, name, input, expected: Grain_parsing.Parsetree.parsed_program) => {
+    (
+      ~keep_locs=false,
+      test,
+      name,
+      input,
+      expected: Grain_parsing.Parsetree.parsed_program,
+    ) => {
   test(
     name,
     ({expect}) => {
@@ -272,12 +372,33 @@ let makeParseRunner =
           comments: List.map(comment_loc_stripper, comments),
           prog_loc: Location.dummy_loc,
         };
-      let parsed = strip_locs @@ parseString(name, input);
-      let untagged = strip_locs @@ parsed;
+      let parsed =
+        if (keep_locs) {
+          parseString(name, input);
+        } else {
+          strip_locs @@ parseString(name, input);
+        };
       let conv = p =>
         Sexplib.Sexp.to_string_hum @@
         Grain_parsing.Parsetree.sexp_of_parsed_program(p);
-      expect.string(conv(untagged)).toEqual(conv(expected));
+      expect.string(conv(parsed)).toEqual(conv(expected));
+    },
+  );
+};
+
+let makeFormatterRunner = (test, name, filename) => {
+  test(
+    name,
+    ({expect}) => {
+      let infile = formatter_in_file(filename);
+      let (result, _) = format(infile);
+
+      // toEqualFile reads a file and misses the final newline,
+      // so we will trim our final newline
+
+      expect.string(String.trim(result)).toEqualFile(
+        formatter_out_file(name),
+      );
     },
   );
 };
