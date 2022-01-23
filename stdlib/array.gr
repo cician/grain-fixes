@@ -205,34 +205,49 @@ export let append = (array1, array2) => {
 export let concat = arrays => {
   // This function is slightly verbose to avoid depending on the List stdlib.
 
-  let rec findLength = (arrays, acc) => {
-    match (arrays) {
-      [fst, ...rest] => findLength(rest, acc + length(fst)),
-      [] => acc,
+  // First iterate the list of arrays and sum their lengths in order to
+  // know the length of the new array.
+  let mut totalLength = 0
+  for (let mut head = arrays;;) {
+    match (head) {
+      [fst, ...rest] => {
+        totalLength += length(fst)
+        head = rest
+      },
+      [] => break,
     }
   }
 
-  let mut offset = 0
-  let mut arrs = arrays
+  // Note that this code assumes sequential callbacks from the init function.
+  match (arrays) {
+    [firstArray, ...restArrays] => {
+      let mut arrs = restArrays
+      let mut currentArray = firstArray
+      let mut currentArrayPosition = 0
+      let mut currentArrayLength = length(currentArray)
 
-  let rec next = index => {
-    let array = match (arrs) {
-      [fst, ..._] => fst,
-      [] => fail "end of arrays list",
-    }
-    if (index - offset == length(array)) {
-      offset += length(array)
-      arrs = match (arrs) {
-        [_, ...rest] => rest,
-        [] => fail "end of arrays list",
-      }
-      next(index)
-    } else {
-      array[index - offset]
-    }
+      init(totalLength, n => {
+        while (currentArrayPosition >= currentArrayLength) {
+          match (arrs) {
+            [fst, ...rest] => {
+              currentArray = fst
+              currentArrayPosition = 0
+              currentArrayLength = length(currentArray)
+              arrs = rest
+            },
+            [] => {
+              // should never happen
+              fail "end of arrays list"
+            },
+          }
+        }
+        let elem = currentArray[currentArrayPosition]
+        currentArrayPosition += 1
+        elem
+      })
+    },
+    [] => [>],
   }
-
-  init(findLength(arrays, 0), next)
 }
 
 /**
@@ -495,6 +510,15 @@ export let reverse = array => {
   })
 }
 
+let rec buildList = (acc, index, array) => {
+  let index = index - 1
+  if (index < 0) {
+    acc
+  } else {
+    buildList([array[index], ...acc], index, array)
+  }
+}
+
 /**
  * Converts the input array to a list.
  *
@@ -504,15 +528,22 @@ export let reverse = array => {
  * @since v0.1.0
  */
 export let toList = array => {
-  let rec buildList = (acc, index) => {
-    let index = index - 1
-    if (index < 0) {
-      acc
-    } else {
-      buildList([array[index], ...acc], index)
-    }
+  // Imperative version.
+  // let mut result = []
+  // for (let mut index=length(array) - 1; index >= 0; index -= 1) {
+  //   result = [array[index], ...result]
+  // }
+  // result
+
+  // Functional version.
+  buildList([], length(array), array)
+}
+
+let rec listLength = (list, acc) => {
+  match (list) {
+    [_, ...rest] => listLength(rest, acc + 1),
+    [] => acc,
   }
-  buildList([], length(array))
 }
 
 /**
@@ -524,23 +555,18 @@ export let toList = array => {
  * @since v0.1.0
  */
 export let fromList = list => {
-  let rec listLength = (list, acc) => {
-    match (list) {
-      [_, ...rest] => listLength(rest, acc + 1),
-      [] => acc,
-    }
-  }
-
   let mut lst = list
-  let rec next = index => {
+
+  let next = index => {
     match (lst) {
       [fst, ...rest] => {
         lst = rest
         fst
       },
-      [] => next(index),
+      [] => fail "premature end of list",
     }
   }
+
   init(listLength(list, 0), next)
 }
 
@@ -880,6 +906,31 @@ export let slice = (startIndex, endIndex, array) => {
   }
 }
 
+let partition = (low, high, comp, array) => {
+  let pivot = array[high]
+  let mut i = low - 1
+  for (let mut j = low; j < high; j += 1) {
+    if (comp(array[j], pivot) < 0) {
+      i += 1
+      let temp = array[i]
+      array[i] = array[j]
+      array[j] = temp
+    }
+  }
+  let temp = array[i + 1]
+  array[i + 1] = array[high]
+  array[high] = temp
+  i + 1
+}
+
+let rec quicksort = (low, high, comp, array) => {
+  if (low < high) {
+    let partitionIndex = partition(low, high, comp, array)
+    quicksort(partitionIndex + 1, high, comp, array)
+    quicksort(low, partitionIndex - 1, comp, array)
+  }
+}
+
 /**
  * Sorts an array in-place.
  *
@@ -889,31 +940,16 @@ export let slice = (startIndex, endIndex, array) => {
  * @since v0.4.5
  */
 export let sort = (comp, array) => {
-  let partition = (low, high) => {
-    let pivot = array[high]
-    let mut i = low - 1
-    for (let mut j = low; j < high; j += 1) {
-      if (comp(array[j], pivot) < 0) {
-        i += 1
-        let temp = array[i]
-        array[i] = array[j]
-        array[j] = temp
-      }
-    }
-    let temp = array[i + 1]
-    array[i + 1] = array[high]
-    array[high] = temp
-    i + 1
-  }
-  let rec quicksort = (low, high) => {
-    if (low < high) {
-      let partitionIndex = partition(low, high)
-      quicksort(partitionIndex + 1, high)
-      quicksort(low, partitionIndex - 1)
-    }
-  }
   let len = length(array)
-  quicksort(0, len - 1)
+  quicksort(0, len - 1, comp, array)
+}
+
+let rec gcd = (a, b) => {
+  if (b == 0) {
+    a
+  } else {
+    gcd(b, a % b)
+  }
 }
 
 /**
@@ -930,14 +966,6 @@ export let sort = (comp, array) => {
  * @since v0.4.5
  */
 export let rotate = (n, arr) => {
-  let rec gcd = (a, b) => {
-    if (b == 0) {
-      a
-    } else {
-      gcd(b, a % b)
-    }
-  }
-
   let arrLen = length(arr)
   if (arrLen > 0) {
     let k = n % arrLen
